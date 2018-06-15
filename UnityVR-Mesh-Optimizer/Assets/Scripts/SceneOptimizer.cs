@@ -7,6 +7,7 @@ public class SceneOptimizer : MonoBehaviour {
 
 	[SerializeField] Camera cam;
 	[SerializeField] SampleSize sampleSize = SampleSize._256;
+	[SerializeField] float threshold;
 
 	MeshFilter visiblityTesterMesh;
 	RenderTexture renderTexture;
@@ -14,7 +15,7 @@ public class SceneOptimizer : MonoBehaviour {
 
 	List<Mesh> optimizedMeshes;
 
-	void OnEnable () {
+	void Start () {
 		GameObject visiblityTester = new GameObject();
 		visiblityTester.name = "VisiblityTester";
 		visiblityTesterMesh = visiblityTester.AddComponent<MeshFilter>();
@@ -102,9 +103,124 @@ public class SceneOptimizer : MonoBehaviour {
 			}
 		}
 		optimizedMesh.triangles = triangles.ToArray();
+		while(!OptimizeMeshTriangles(optimizedMesh, threshold));
 		RemoveLoneVertices(optimizedMesh);
-		optimizedMeshes.Add(optimizedMesh);
 		m.mesh = optimizedMesh;
+		optimizedMeshes.Add(optimizedMesh);
+	}
+
+	bool OptimizeMeshTriangles(Mesh m, float threshold) {
+		bool isOptimized = false;
+		List<int> triangles = new List<int>(m.triangles);
+		for(int i = 0; i<m.vertices.Length; i++ ) {
+			if(CanRemoveVertex(triangles, m.normals, i, threshold)) {
+				DeleteVertex(ref triangles, i);
+				isOptimized = true;
+			}
+		}
+		m.triangles = triangles.ToArray();
+		return isOptimized;
+	}
+
+	List<Pair<int, Triplet<int, int, int>>> AdjoiningTriangles(List<int> triangles, int vertexNumber) {
+		List<Pair<int, Triplet<int, int, int>>> tris = new List<Pair<int, Triplet<int, int, int>>>();
+		for(int i = 0; i<triangles.Count; i++) {
+			if(triangles[i] == vertexNumber) {
+				int a = i - (i % 3);
+				tris.Add(new Pair<int, Triplet<int, int, int>>(a, new Triplet<int, int, int>(triangles[a], triangles[a + 1], triangles[a + 2])));
+			}
+		}
+		return tris;
+	}
+
+	List<int> AdjacentVertices(List<Pair<int, Triplet<int, int, int>>> adjoiningTriangles, int vertexNumber) {
+		List<Pair<int, int>> adjacentVertices = new List<Pair<int, int>>();
+		for(int i = 0; i<adjoiningTriangles.Count; i++) {
+			int[] v = new int[2];
+			if(adjoiningTriangles[i].second.first == vertexNumber) {
+				v[0] = adjoiningTriangles[i].second.second;
+				v[1] = adjoiningTriangles[i].second.third;
+			} else if(adjoiningTriangles[i].second.second == vertexNumber) {
+				v[0] = adjoiningTriangles[i].second.third;
+				v[1] = adjoiningTriangles[i].second.first;
+			} else {
+				v[0] = adjoiningTriangles[i].second.first;
+				v[1] = adjoiningTriangles[i].second.second;
+			}
+			// if(adjoiningTriangles[i].first != vertexNumber) v.Add(adjoiningTriangles[i].first);
+			// if(adjoiningTriangles[i].second != vertexNumber) v.Add(adjoiningTriangles[i].second);
+			// if(adjoiningTriangles[i].third != vertexNumber) v.Add(adjoiningTriangles[i].third);
+			// v.Sort();
+			adjacentVertices.Add(new Pair<int, int>(v[0], v[1]));
+		}
+		if(adjacentVertices.Count == 0) return null;
+		List<int> result = new List<int>();
+		result.Add(adjacentVertices[0].first);
+		result.Add(adjacentVertices[0].second);
+		adjacentVertices.RemoveAt(0);
+		while(adjacentVertices.Count != 0) {
+			bool nextFound = false;
+			for(int i = 0; i<adjacentVertices.Count; i++) {
+				if(result[result.Count - 1] == adjacentVertices[i].first) {
+					result.Add(adjacentVertices[i].second);
+					adjacentVertices.RemoveAt(i);
+					nextFound = true;
+					break;
+				}
+			}
+			if(!nextFound) return null;
+		}
+		if(result[result.Count - 1] != result[0]) {
+			return null;
+		}
+		result.RemoveAt(result.Count - 1);
+		return result;
+
+		// adjacentVertices.Sort(delegate(Pair<int, int> a, Pair<int, int> b) {
+		// 	if(a.first < b.first) return 0;
+		// 	return -1;
+		// });
+		//return adjacentVertices;
+	}
+
+	bool CanRemoveVertex(List<int> triangles, Vector3[] normals, int vertexNumber, float thresholdAngle) {
+		List<Pair<int, Triplet<int, int, int>>> adjoiningTriangles = AdjoiningTriangles(triangles, vertexNumber);
+		for(int i = 0; i <adjoiningTriangles.Count; i++) {
+			if(Vector3.Angle(normals[adjoiningTriangles[i].second.first], normals[vertexNumber]) > thresholdAngle ||
+					Vector3.Angle(normals[adjoiningTriangles[i].second.second], normals[vertexNumber]) > thresholdAngle ||
+					Vector3.Angle(normals[adjoiningTriangles[i].second.third], normals[vertexNumber]) > thresholdAngle) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	void DeleteVertex(ref List<int> triangles, int vertexNumber) {
+		List<Pair<int, Triplet<int, int, int>>> adjoiningTriangles = AdjoiningTriangles(triangles, vertexNumber);
+		List<int> adjacentVertices = AdjacentVertices(adjoiningTriangles, vertexNumber);
+		if(adjacentVertices == null) return;
+		List<int> trianglesToRemove = new List<int>();
+		for(int i = 0; i < adjoiningTriangles.Count; i++) {
+			trianglesToRemove.Add(adjoiningTriangles[i].first);
+			trianglesToRemove.Add(adjoiningTriangles[i].first + 1);
+			trianglesToRemove.Add(adjoiningTriangles[i].first + 2);
+		}
+		trianglesToRemove.Sort();
+		for(int i = trianglesToRemove.Count - 1; i >= 0; i--) {
+			triangles.RemoveAt(trianglesToRemove[i]);
+		}
+		// List<Pair<int, int>> adjacentVertices = AdjacentVertices(adjoiningTriangles, vertexNumber);
+		// for(int i = 1; i<adjacentVertices.Count; i++) {
+		// 	triangles.Add(adjacentVertices[0].first);
+		// 	triangles.Add(adjacentVertices[i].first);
+		// 	triangles.Add(adjacentVertices[i].second);
+		// }
+
+		for(int i = 1; i<adjacentVertices.Count - 1; i++) {
+			triangles.Add(adjacentVertices[0]);
+			triangles.Add(adjacentVertices[i]);
+			triangles.Add(adjacentVertices[i + 1]);
+		}
 	}
 
 	void RemoveLoneVertices(Mesh m) {
@@ -126,26 +242,34 @@ public class SceneOptimizer : MonoBehaviour {
 
 	void UpdateMeshWithVertexMap(Mesh m, int[] vertexMap) {
 		//Triangles
-		List<int> triangles = new List<int>();
+		int[] triangles = new int[m.triangles.Length];
 		for(int i = 0; i<m.triangles.Length; i++) {
-			triangles.Add(vertexMap[m.triangles[i]]);
+			triangles[i] = vertexMap[m.triangles[i]];
 		}
-		//Vertices, Normals and UV's
-		List<Vector3> vertices = new List<Vector3>();
-		List<Vector3> normals = new List<Vector3>();
-		List<Vector2> uv = new List<Vector2>();
-		for(int i = 0; i<vertexMap.Length; i++) {
+		int vertexCount = 0;
+		for(int i = 0; i< vertexMap.Length; i++) {
 			if(vertexMap[i] != -1) {
-				vertices.Add(m.vertices[i]);
-				normals.Add(m.normals[i]);
-				uv.Add(m.uv[i]);
+				vertexCount++;
 			}
 		}
-		m.triangles = triangles.ToArray();
-		m.vertices = vertices.ToArray();
-		m.normals = normals.ToArray();
-		// m.tangents
-		m.uv = uv.ToArray();
+		//Vertices, Normals, Tangents and UV's
+		Vector3[] vertices = new Vector3[vertexCount];
+		Vector3[] normals = new Vector3[vertexCount];
+		Vector4[] tangents = new Vector4[vertexCount];
+		Vector2[] uv = new Vector2[vertexCount];
+		for(int i = 0; i<vertexMap.Length; i++) {
+			if(vertexMap[i] != -1) {
+				vertices[vertexMap[i]] = m.vertices[i];
+				normals[vertexMap[i]] = m.normals[i];
+				tangents[vertexMap[i]] = m.tangents[i];
+				uv[vertexMap[i]] = m.uv[i];
+			}
+		}
+		m.triangles = triangles;
+		m.vertices = vertices;
+		m.normals = normals;
+		m.tangents = tangents;
+		m.uv = uv;
 		//m.tangents
 		// m.uv2
 		// m.uv3
@@ -167,6 +291,28 @@ public class SceneOptimizer : MonoBehaviour {
 
 		DestroyImmediate(tex2d);
 		return false;
+	}
+
+	class Pair<A, B> {
+		public A first;
+		public B second;
+
+		public Pair(A a, B b) {
+			first = a;
+			second = b;
+		}
+	}
+
+	class Triplet<A, B, C> {
+		public A first;
+		public B second;
+		public C third;
+
+		public Triplet(A a, B b, C c) {
+			first = a;
+			second = b;
+			third = c;
+		}
 	}
 
 	class Triangle {
