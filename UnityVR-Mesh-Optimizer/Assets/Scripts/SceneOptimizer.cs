@@ -191,23 +191,6 @@ public class SceneOptimizer : MonoBehaviour {
 		List<int> adjacentVertices = AdjacentVertices(ref triangles, adjoiningTriangles, vertexNumber);
 		if(adjacentVertices == null) return null;
 
-		// adjoiningTriangles.Sort(delegate(Pair<int, Triplet<int, int, int>> a, Pair<int, Triplet<int, int, int>> b) {
-		// 	if(a.first < b.first) {
-		// 		return 0;
-		// 	}
-		// 	return -1;
-		// });
-
-		// for(int i = adjoiningTriangles.Count - 1; i >= 0; i--) {
-		// 	Debug.Log(adjoiningTriangles[i].first);
-		// }
-
-		// for(int i = adjoiningTriangles.Count - 1; i >= 0; i--) {
-		// 	triangles.RemoveAt(adjoiningTriangles[i].first + 2);
-		// 	triangles.RemoveAt(adjoiningTriangles[i].first + 1);
-		// 	triangles.RemoveAt(adjoiningTriangles[i].first);
-		// }
-
 		List<int> trianglesToRemove = new List<int>();
 		for(int i = 0; i < adjoiningTriangles.Count; i++) {
 			trianglesToRemove.Add(adjoiningTriangles[i]);
@@ -371,60 +354,50 @@ public class SceneOptimizer : MonoBehaviour {
 		}
 
 		public List<Pair<int, int>> GetScreenPoints(Camera cam, float renderResolution) {
-			List<Vector3> screenVertices = new List<Vector3>();
+			List<Vector2> screenVertices = new List<Vector2>();
 			for(int i = 0; i < worldVertices.Count; i++) {
 				screenVertices.Add(cam.WorldToScreenPoint(worldVertices[i]));
 			}
 			List<Pair<int, int>> points = new List<Pair<int, int>>();
 
-			// int minX = 0;
-			// int maxX = 0;
-			// int minY = 0;
-			// int midY = 0;
-			// int maxY = 0;
+			screenVertices.Sort(delegate(Vector2 a, Vector2 b){
+				if(a.y < b.y) return -1;
+				return 1;
+			});
 
-			// for(int i = 0; i < screenVertices.Count; i++) {
-			// 	if(screenVertices[i].x < screenVertices[minX].x) {
-			// 		minX = i;
-			// 	} 
-			// 	if(screenVertices[i].x > screenVertices[maxX].x) {
-			// 		maxX = i;
-			// 	}
-			// 	if(screenVertices[i].y < screenVertices[minY].y) {
-			// 		minY = i;
-			// 	} 
-			// 	if(screenVertices[i].y > screenVertices[maxY].y) {
-			// 		maxY = i;
-			// 	}
-			// }
-			// midY = 3 - (minY + maxY);
+			float totalHeight = screenVertices[2].y - screenVertices[0].y;
+			for(int y = (int)screenVertices[0].y; y < screenVertices[1].y; y++) {
+				float segmentHeight = screenVertices[1].y - screenVertices[0].y + 1;
+				float alpha = (y - screenVertices[0].y) / totalHeight;
+				float beta = (y - screenVertices[0].y) / segmentHeight;
 
-			// for(int i = (int)screenVertices[minY].y; i < screenVertices[midY].y; i++) {
-			// 	//int a = (screenVertices[maxY].x - screenVertices[minY].x) * (i - screenVertices[minY].y) / (screenVertices[maxY].y - screenVertices[minY].y);
-			// 	int a = Vector2.Lerp()
-			// 	int b = ;
-			// 	for(int j = screenVertices[minX]; j < 1; j++) {
-			// 		points.Add(new Vector2Int(j, i));
-			// 	}
-			// }
+				Vector2 a = screenVertices[0] + (screenVertices[2] - screenVertices[0]) * alpha;
+				Vector2 b = screenVertices[0] + (screenVertices[1] - screenVertices[0]) * beta;
 
-			int minX = (int)screenVertices[0].x - 1;
-			int maxX = (int)screenVertices[0].x - 1;
-			int minY = (int)screenVertices[0].y - 1;
-			int maxY = (int)screenVertices[0].y - 1;
-			for(int i = 0; i < screenVertices.Count; i++) {
-				minX = (int)Mathf.Min(minX, screenVertices[i].x);
-				maxX = (int)Mathf.Max(maxX, screenVertices[i].x);
-				minY = (int)Mathf.Min(minY, screenVertices[i].y);
-				maxY = (int)Mathf.Max(maxY, screenVertices[i].y);
+				if(a.x > b.x) {
+					a += b;
+					b = a - b;
+					a = a - b;
+				}
+				for(int x = (int)a.x; x <= Mathf.Ceil(b.x); x++) {
+					points.Add(new Pair<int, int>(x, y));
+				}
 			}
-			minX = (int)Mathf.Max(minX, 0);
-			maxX = (int)Mathf.Min(maxX, renderResolution);
-			minY = (int)Mathf.Max(minY, 0);
-			maxY = (int)Mathf.Min(maxY, renderResolution);
-			for(int i = minX; i <= Mathf.Ceil(maxX); i++) {
-				for(int j = minY; j <= Mathf.Ceil(maxY); j++) {
-					points.Add(new Pair<int, int>(i, j));
+			for(int y = (int)screenVertices[1].y; y <= Mathf.Ceil(screenVertices[2].y); y++) {
+				float segmentHeight = screenVertices[2].y - screenVertices[1].y + 1;
+				float alpha = (y - screenVertices[0].y) / totalHeight;
+				float beta = (y - screenVertices[1].y) / segmentHeight;
+
+				Vector2 a = screenVertices[0] + (screenVertices[2] - screenVertices[0]) * alpha;
+				Vector2 b = screenVertices[1] + (screenVertices[2] - screenVertices[1]) * beta;
+
+				if(a.x > b.x) {
+					a += b;
+					b = a - b;
+					a = a - b;
+				}
+				for(int x = (int)a.x; x <= Mathf.Ceil(b.x); x++) {
+					points.Add(new Pair<int, int>(x, y));
 				}
 			}
 			return points;
