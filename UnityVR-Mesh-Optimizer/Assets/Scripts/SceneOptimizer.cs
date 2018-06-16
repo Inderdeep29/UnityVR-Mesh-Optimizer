@@ -62,7 +62,7 @@ public class SceneOptimizer : MonoBehaviour {
 		for(int i = 0; i<meshes.Length; i++) {
 			Debug.Log("Processing mesh: " + (i + 1) + "/" + meshes.Length);
 			yield return OptimizeMesh(meshes[i]);
-
+			//System.GC.Collect();
 			//ObjExporter.MeshToFile(meshes[i], "Assets/Test/SceneOptimizerTest/Objs/" + i + ".obj");
 		}
 
@@ -84,7 +84,7 @@ public class SceneOptimizer : MonoBehaviour {
 				m.gameObject.transform.TransformPoint(m.mesh.vertices[triangles[i + 1]]),
 				m.gameObject.transform.TransformPoint(m.mesh.vertices[triangles[i + 2]])
 			);
-			visiblityTriangle.InflateTriangle(0.01f);
+			visiblityTriangle.InflateTriangle(0.001f);
 			visiblityTesterMesh.transform.position = visiblityTriangle.Center();
 			visiblityTriangle.InverseTransformPoint(visiblityTesterMesh.transform);
 			visiblityTesterMesh.mesh.vertices = visiblityTriangle.GetLocalVertices();
@@ -113,8 +113,9 @@ public class SceneOptimizer : MonoBehaviour {
 		bool isOptimized = false;
 		List<int> triangles = new List<int>(m.triangles);
 		for(int i = 0; i<m.vertices.Length; i++ ) {
-			if(CanRemoveVertex(triangles, m.normals, i, threshold)) {
-				DeleteVertex(ref triangles, i);
+			if(CanRemoveVertex(ref triangles, m.normals, i, threshold)) {
+				List<int> vertexToFill = DeleteVertex(ref triangles, i);
+				FillArea(ref triangles, vertexToFill);
 				isOptimized = true;
 			}
 		}
@@ -122,104 +123,110 @@ public class SceneOptimizer : MonoBehaviour {
 		return isOptimized;
 	}
 
-	List<Pair<int, Triplet<int, int, int>>> AdjoiningTriangles(List<int> triangles, int vertexNumber) {
-		List<Pair<int, Triplet<int, int, int>>> tris = new List<Pair<int, Triplet<int, int, int>>>();
+	List<int> AdjoiningTriangles(ref List<int> triangles, int vertexNumber) {
+		List<int> tris = new List<int>();
 		for(int i = 0; i<triangles.Count; i++) {
 			if(triangles[i] == vertexNumber) {
 				int a = i - (i % 3);
-				tris.Add(new Pair<int, Triplet<int, int, int>>(a, new Triplet<int, int, int>(triangles[a], triangles[a + 1], triangles[a + 2])));
+				tris.Add(a);
 			}
 		}
 		return tris;
 	}
 
-	List<int> AdjacentVertices(List<Pair<int, Triplet<int, int, int>>> adjoiningTriangles, int vertexNumber) {
-		List<Pair<int, int>> adjacentVertices = new List<Pair<int, int>>();
+	List<int> AdjacentVertices(ref List<int> triangles, List<int> adjoiningTriangles, int vertexNumber) {
+		List<Pair<int, int>> adjacentVertexPairs = new List<Pair<int, int>>();
 		for(int i = 0; i<adjoiningTriangles.Count; i++) {
 			int[] v = new int[2];
-			if(adjoiningTriangles[i].second.first == vertexNumber) {
-				v[0] = adjoiningTriangles[i].second.second;
-				v[1] = adjoiningTriangles[i].second.third;
-			} else if(adjoiningTriangles[i].second.second == vertexNumber) {
-				v[0] = adjoiningTriangles[i].second.third;
-				v[1] = adjoiningTriangles[i].second.first;
+			if(triangles[adjoiningTriangles[i]] == vertexNumber) {
+				v[0] = triangles[adjoiningTriangles[i] + 1];
+				v[1] = triangles[adjoiningTriangles[i] + 2];
+			} else if(triangles[adjoiningTriangles[i] + 1] == vertexNumber) {
+				v[0] = triangles[adjoiningTriangles[i] + 2];
+				v[1] = triangles[adjoiningTriangles[i]];
 			} else {
-				v[0] = adjoiningTriangles[i].second.first;
-				v[1] = adjoiningTriangles[i].second.second;
+				v[0] = triangles[adjoiningTriangles[i]];
+				v[1] = triangles[adjoiningTriangles[i] + 1];
 			}
-			// if(adjoiningTriangles[i].first != vertexNumber) v.Add(adjoiningTriangles[i].first);
-			// if(adjoiningTriangles[i].second != vertexNumber) v.Add(adjoiningTriangles[i].second);
-			// if(adjoiningTriangles[i].third != vertexNumber) v.Add(adjoiningTriangles[i].third);
-			// v.Sort();
-			adjacentVertices.Add(new Pair<int, int>(v[0], v[1]));
+			adjacentVertexPairs.Add(new Pair<int, int>(v[0], v[1]));
 		}
-		if(adjacentVertices.Count == 0) return null;
-		List<int> result = new List<int>();
-		result.Add(adjacentVertices[0].first);
-		result.Add(adjacentVertices[0].second);
-		adjacentVertices.RemoveAt(0);
-		while(adjacentVertices.Count != 0) {
+		if(adjacentVertexPairs.Count == 0) return null;
+		List<int> adjacentVertices = new List<int>();
+		adjacentVertices.Add(adjacentVertexPairs[0].first);
+		adjacentVertices.Add(adjacentVertexPairs[0].second);
+		adjacentVertexPairs.RemoveAt(0);
+		while(adjacentVertexPairs.Count != 0) {
 			bool nextFound = false;
-			for(int i = 0; i<adjacentVertices.Count; i++) {
-				if(result[result.Count - 1] == adjacentVertices[i].first) {
-					result.Add(adjacentVertices[i].second);
-					adjacentVertices.RemoveAt(i);
+			for(int i = 0; i<adjacentVertexPairs.Count; i++) {
+				if(adjacentVertices[adjacentVertices.Count - 1] == adjacentVertexPairs[i].first) {
+					adjacentVertices.Add(adjacentVertexPairs[i].second);
+					adjacentVertexPairs.RemoveAt(i);
 					nextFound = true;
 					break;
 				}
 			}
 			if(!nextFound) return null;
 		}
-		if(result[result.Count - 1] != result[0]) {
+		if(adjacentVertices[adjacentVertices.Count - 1] != adjacentVertices[0]) {
 			return null;
 		}
-		result.RemoveAt(result.Count - 1);
-		return result;
-
-		// adjacentVertices.Sort(delegate(Pair<int, int> a, Pair<int, int> b) {
-		// 	if(a.first < b.first) return 0;
-		// 	return -1;
-		// });
-		//return adjacentVertices;
+		adjacentVertices.RemoveAt(adjacentVertices.Count - 1);
+		return adjacentVertices;
 	}
 
-	bool CanRemoveVertex(List<int> triangles, Vector3[] normals, int vertexNumber, float thresholdAngle) {
-		List<Pair<int, Triplet<int, int, int>>> adjoiningTriangles = AdjoiningTriangles(triangles, vertexNumber);
+	bool CanRemoveVertex(ref List<int> triangles, Vector3[] normals, int vertexNumber, float thresholdAngle) {
+		List<int> adjoiningTriangles = AdjoiningTriangles(ref triangles, vertexNumber);
 		for(int i = 0; i <adjoiningTriangles.Count; i++) {
-			if(Vector3.Angle(normals[adjoiningTriangles[i].second.first], normals[vertexNumber]) > thresholdAngle ||
-					Vector3.Angle(normals[adjoiningTriangles[i].second.second], normals[vertexNumber]) > thresholdAngle ||
-					Vector3.Angle(normals[adjoiningTriangles[i].second.third], normals[vertexNumber]) > thresholdAngle) {
+			if(Vector3.Angle(normals[triangles[adjoiningTriangles[i]]], normals[vertexNumber]) > thresholdAngle ||
+					Vector3.Angle(normals[triangles[adjoiningTriangles[i] + 1]], normals[vertexNumber]) > thresholdAngle ||
+					Vector3.Angle(normals[triangles[adjoiningTriangles[i] + 2]], normals[vertexNumber]) > thresholdAngle) {
 				return false;
 			}
 		}
 		return true;
 	}
 
-	void DeleteVertex(ref List<int> triangles, int vertexNumber) {
-		List<Pair<int, Triplet<int, int, int>>> adjoiningTriangles = AdjoiningTriangles(triangles, vertexNumber);
-		List<int> adjacentVertices = AdjacentVertices(adjoiningTriangles, vertexNumber);
-		if(adjacentVertices == null) return;
+	List<int> DeleteVertex(ref List<int> triangles, int vertexNumber) {
+		List<int> adjoiningTriangles = AdjoiningTriangles(ref triangles, vertexNumber);
+		List<int> adjacentVertices = AdjacentVertices(ref triangles, adjoiningTriangles, vertexNumber);
+		if(adjacentVertices == null) return null;
+
+		// adjoiningTriangles.Sort(delegate(Pair<int, Triplet<int, int, int>> a, Pair<int, Triplet<int, int, int>> b) {
+		// 	if(a.first < b.first) {
+		// 		return 0;
+		// 	}
+		// 	return -1;
+		// });
+
+		// for(int i = adjoiningTriangles.Count - 1; i >= 0; i--) {
+		// 	Debug.Log(adjoiningTriangles[i].first);
+		// }
+
+		// for(int i = adjoiningTriangles.Count - 1; i >= 0; i--) {
+		// 	triangles.RemoveAt(adjoiningTriangles[i].first + 2);
+		// 	triangles.RemoveAt(adjoiningTriangles[i].first + 1);
+		// 	triangles.RemoveAt(adjoiningTriangles[i].first);
+		// }
+
 		List<int> trianglesToRemove = new List<int>();
 		for(int i = 0; i < adjoiningTriangles.Count; i++) {
-			trianglesToRemove.Add(adjoiningTriangles[i].first);
-			trianglesToRemove.Add(adjoiningTriangles[i].first + 1);
-			trianglesToRemove.Add(adjoiningTriangles[i].first + 2);
+			trianglesToRemove.Add(adjoiningTriangles[i]);
+			trianglesToRemove.Add(adjoiningTriangles[i] + 1);
+			trianglesToRemove.Add(adjoiningTriangles[i] + 2);
 		}
 		trianglesToRemove.Sort();
 		for(int i = trianglesToRemove.Count - 1; i >= 0; i--) {
 			triangles.RemoveAt(trianglesToRemove[i]);
 		}
-		// List<Pair<int, int>> adjacentVertices = AdjacentVertices(adjoiningTriangles, vertexNumber);
-		// for(int i = 1; i<adjacentVertices.Count; i++) {
-		// 	triangles.Add(adjacentVertices[0].first);
-		// 	triangles.Add(adjacentVertices[i].first);
-		// 	triangles.Add(adjacentVertices[i].second);
-		// }
+		return adjacentVertices;
+	}
 
-		for(int i = 1; i<adjacentVertices.Count - 1; i++) {
-			triangles.Add(adjacentVertices[0]);
-			triangles.Add(adjacentVertices[i]);
-			triangles.Add(adjacentVertices[i + 1]);
+	void FillArea(ref List<int> triangles, List<int> vertices) {
+		if(vertices == null) return;
+		for(int i = 1; i<vertices.Count - 1; i++) {
+			triangles.Add(vertices[0]);
+			triangles.Add(vertices[i]);
+			triangles.Add(vertices[i + 1]);
 		}
 	}
 
@@ -282,9 +289,9 @@ public class SceneOptimizer : MonoBehaviour {
 		tex2d.ReadPixels(new Rect(0, 0, renderTexture.width, renderTexture.height), 0, 0);
 		tex2d.Apply();
 
-		List<Vector2Int> screenPoints = triangle.GetScreenPoints(cam);
+		List<Pair<int, int>> screenPoints = triangle.GetScreenPoints(cam, GetSampleResolution(sampleSize));
 		for(int i = 0; i< screenPoints.Count; i++) {
-			if(tex2d.GetPixel(screenPoints[i].x, screenPoints[i].y) == Color.white) {
+			if(tex2d.GetPixel(screenPoints[i].first, screenPoints[i].second) == Color.white) {
 				return true;
 			}
 		}
@@ -363,12 +370,12 @@ public class SceneOptimizer : MonoBehaviour {
 			return localVertices.ToArray();
 		}
 
-		public List<Vector2Int> GetScreenPoints(Camera cam) {
+		public List<Pair<int, int>> GetScreenPoints(Camera cam, float renderResolution) {
 			List<Vector3> screenVertices = new List<Vector3>();
 			for(int i = 0; i < worldVertices.Count; i++) {
 				screenVertices.Add(cam.WorldToScreenPoint(worldVertices[i]));
 			}
-			List<Vector2Int> points = new List<Vector2Int>();
+			List<Pair<int, int>> points = new List<Pair<int, int>>();
 
 			// int minX = 0;
 			// int maxX = 0;
@@ -407,17 +414,19 @@ public class SceneOptimizer : MonoBehaviour {
 			int maxY = (int)screenVertices[0].y - 1;
 			for(int i = 0; i < screenVertices.Count; i++) {
 				minX = (int)Mathf.Min(minX, screenVertices[i].x);
-				maxX = (int)Mathf.Ceil(Mathf.Max(maxX, screenVertices[i].x));
+				maxX = (int)Mathf.Max(maxX, screenVertices[i].x);
 				minY = (int)Mathf.Min(minY, screenVertices[i].y);
-				maxY = (int)Mathf.Ceil(Mathf.Max(maxY, screenVertices[i].y));
+				maxY = (int)Mathf.Max(maxY, screenVertices[i].y);
 			}
-
-			for(int i = minX; i<=maxX; i++) {
-				for(int j = minY; j<=maxY; j++) {
-					points.Add(new Vector2Int(i, j));
+			minX = (int)Mathf.Max(minX, 0);
+			maxX = (int)Mathf.Min(maxX, renderResolution);
+			minY = (int)Mathf.Max(minY, 0);
+			maxY = (int)Mathf.Min(maxY, renderResolution);
+			for(int i = minX; i <= Mathf.Ceil(maxX); i++) {
+				for(int j = minY; j <= Mathf.Ceil(maxY); j++) {
+					points.Add(new Pair<int, int>(i, j));
 				}
 			}
-
 			return points;
 		}
 	}
