@@ -13,13 +13,15 @@ public class SceneOptimizer {
 	static void Initialize(AnalyzerMeshData[] analyzerMeshData, Vector3 cameraPosition) {
 		if(cam == null) {
 			GameObject optimizerCamera = new GameObject("OptimizerCamera");
-			optimizerCamera.transform.position = cameraPosition;
 			cam = optimizerCamera.AddComponent<Camera>();
-			cam.clearFlags = CameraClearFlags.Color;
-			cam.backgroundColor = Color.black;
-			cam.allowMSAA = false;
-			cam.allowHDR = false;
 		}
+		cam.transform.position = cameraPosition;
+		cam.clearFlags = CameraClearFlags.Color;
+		cam.backgroundColor = Color.black;
+		cam.allowMSAA = false;
+		cam.allowHDR = false;
+		RenderTexture.DestroyImmediate(renderTexture);
+		Texture2D.DestroyImmediate(renderTexture2D);
 		Material unlitBlackMaterial = Utilities.GetUnlitMaterial(Color.black);
 		for(int i = 0; i<analyzerMeshData.Length; i++) {
 			analyzerMeshData[i].SetMaterial(unlitBlackMaterial);
@@ -28,8 +30,6 @@ public class SceneOptimizer {
 
 	static void UpdateRenderTextureSize(int sampleResolution) {
 		if(renderTexture == null || renderTexture.width != sampleResolution) {
-			GameObject.DestroyImmediate(renderTexture);
-			GameObject.DestroyImmediate(renderTexture2D);
 			renderTexture = new RenderTexture(sampleResolution, sampleResolution, 24, RenderTextureFormat.ARGB32);
 			renderTexture.Create();
 			renderTexture2D = new Texture2D(renderTexture.width, renderTexture.height, TextureFormat.RGB24, false);
@@ -55,8 +55,6 @@ public class SceneOptimizer {
 			}
 			//ObjExporter.MeshToFile(meshes[i], "Assets/Test/SceneOptimizerTest/Objs/" + i + ".obj");
 		}
-
-
 		StopAnalyzing(analyzerMeshData);
 		Debug.Log("Total Time: " + (Time.time - startTime) / 60 + " minutes");
 	}
@@ -77,7 +75,6 @@ public class SceneOptimizer {
 
 		for(int i = 0; i < triangles.Count;) {
 			currentStatus = logPrefix + "Triangle: " + (i / 3 + 1) + "/" + triangles.Count / 3f;
-			Debug.Log(currentStatus);
 			Triangle visiblityTriangle = new Triangle(
 				analyzerMeshData.GetTransform().gameObject.transform.TransformPoint(analyzerMeshData.GetMesh().vertices[triangles[i]]),
 				analyzerMeshData.GetTransform().gameObject.transform.TransformPoint(analyzerMeshData.GetMesh().vertices[triangles[i + 1]]),
@@ -103,11 +100,10 @@ public class SceneOptimizer {
 
 		optimizedMesh.triangles = triangles.ToArray();
 		RemoveLoneVertices(optimizedMesh);
-		// while(!OptimizeMeshTriangles(optimizedMesh, analyzerMeshData.ThresholdAngle())) {
-		// 	yield return null;
-		// }
-		// RemoveLoneVertices(optimizedMesh);
-		// //m.mesh = optimizedMesh;
+		while(OptimizeMeshTriangles(optimizedMesh, analyzerMeshData.ThresholdAngle())) {
+			yield return null;
+		}
+		RemoveLoneVertices(optimizedMesh);
 		analyzerMeshData.SetOptimizedMesh(optimizedMesh);
 	}
 
@@ -164,7 +160,9 @@ public class SceneOptimizer {
 				vertices[vertexMap[i]] = m.vertices[i];
 				normals[vertexMap[i]] = m.normals[i];
 				tangents[vertexMap[i]] = m.tangents[i];
-				uv[vertexMap[i]] = m.uv[i];
+				if(vertexMap.Length == m.uv.Length) {
+					uv[vertexMap[i]] = m.uv[i];
+				}
 			}
 		}
 		m.triangles = triangles;
@@ -184,8 +182,10 @@ public class SceneOptimizer {
 		for(int i = 0; i<m.vertices.Length; i++ ) {
 			if(CanRemoveVertex(ref triangles, m.normals, i, threshold)) {
 				List<int> verticesToFill = DeleteVertex(ref triangles, i);
-				FillArea(ref triangles, verticesToFill);
-				isOptimized = true;
+				if(verticesToFill != null && verticesToFill.Count > 0) {
+					isOptimized = true;
+					FillArea(ref triangles, verticesToFill);
+				}
 			}
 		}
 		m.triangles = triangles.ToArray();

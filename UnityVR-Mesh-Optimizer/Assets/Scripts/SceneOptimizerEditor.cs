@@ -15,10 +15,12 @@ public class SceneOptimizerEditor : EditorWindow {
 	private bool initializeFromTranform;
 	private Transform playerTransform;
 
+	private static EditorWindow editorWindow;
+
 	[MenuItem("IDS/Optimize Scene for 3DOF")]
 	static void OnOptimizeClick() {
 		Initialize();
-		EditorWindow.GetWindow(typeof(SceneOptimizerEditor), true, "Scene Optimizer");
+		editorWindow = EditorWindow.GetWindow(typeof(SceneOptimizerEditor), true, "Scene Optimizer");
 	}
 
 	static void Initialize() {
@@ -26,7 +28,7 @@ public class SceneOptimizerEditor : EditorWindow {
 		MeshFilter[] activeMeshes = GameObject.FindObjectsOfType(typeof(MeshFilter)) as MeshFilter[];
 		meshData = new AnalyzerMeshData[activeMeshes.Length];
 		for(int i = 0; i<meshData.Length; i++) {
-			meshData[i] = new AnalyzerMeshData(activeMeshes[i], Utilities.GetSampleResolution(Utilities.SampleSize._256), 40);
+			meshData[i] = new AnalyzerMeshData(activeMeshes[i], Utilities.GetSampleResolution(Utilities.SampleSize._512), 40);
 		}
 		//SceneOptimizer.CoroutineInProgress = null;
 		CoroutineInProgress = null;
@@ -36,6 +38,7 @@ public class SceneOptimizerEditor : EditorWindow {
 	static void EditorUpdate() {
 		if(CoroutineInProgress == null) return;
         bool finish = !CoroutineInProgress.MoveNext();
+		editorWindow.Repaint();
         if (finish)
         {
 			CoroutineInProgress = null;
@@ -100,9 +103,6 @@ public class SceneOptimizerEditor : EditorWindow {
 				break;
 			case ProcessStatus.isAnalyzing:
 				EditorGUILayout.LabelField ("Progress :" + SceneOptimizer.currentStatus);
-				if(GUILayout.Button("Pause")) {
-					EditorApplication.update -= EditorUpdate;
-				}
 				if(GUILayout.Button("Stop")) {
 					processStatus = ProcessStatus.notAnalyzed;
 					StopAnalyzing();
