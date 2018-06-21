@@ -6,12 +6,12 @@ using System.Text;
 public class ObjExporter {
  
     public static string MeshToString(MeshFilter mf) {
-        Mesh m = mf.mesh;
-        Material[] mats = mf.GetComponent<Renderer>().sharedMaterials;
- 
+        return(MeshToString(mf.mesh, mf.GetComponent<Renderer>().sharedMaterials));
+    }
+
+    public static string MeshToString(Mesh m, Material[] mats) {
         StringBuilder sb = new StringBuilder();
- 
-        sb.Append("g ").Append(mf.name).Append("\n");
+        sb.Append("g ").Append(m.name).Append("\n");
         foreach(Vector3 v in m.vertices) {
             sb.Append(string.Format("v {0} {1} {2}\n",v.x,v.y,v.z));
         }
@@ -38,9 +38,13 @@ public class ObjExporter {
     }
  
     public static void MeshToFile(MeshFilter mf, string filename) {
+        MeshToFile(mf.mesh, mf.GetComponent<Renderer>().sharedMaterials, filename);
+    }
+ 
+    public static void MeshToFile(Mesh m, Material[] mats, string filename) {
         using (StreamWriter sw = new StreamWriter(filename)) 
         {
-            sw.Write(MeshToString(mf));
+            sw.Write(MeshToString(m, mats));
         }
     }
 }

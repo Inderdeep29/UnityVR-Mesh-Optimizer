@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using UnityEngine;
 
 class Triangle {
-	List<Vector3> worldVertices;
-	List<Vector3> localVertices;
+	private List<Vector3> worldVertices;
+	private List<Vector3> localVertices;
 	
 	public Triangle(Vector3 a, Vector3 b, Vector3 c) {
 		worldVertices = new List<Vector3>();
@@ -63,7 +63,7 @@ class Triangle {
 		});
 
 		float totalHeight = screenVertices[2].y - screenVertices[0].y;
-		for(int y = (int)screenVertices[0].y; y < screenVertices[2].y; y++) {
+		for(int y = (int)screenVertices[0].y; y <= Mathf.Ceil(screenVertices[2].y); y++) {
 			bool isSecondHalf = y >= screenVertices[1].y;
 			float segmentHeight = isSecondHalf ? screenVertices[2].y - screenVertices[1].y : 
 				screenVertices[1].y - screenVertices[0].y;
@@ -81,7 +81,7 @@ class Triangle {
 				a = a - b;
 			}
 			for(int x = (int)a.x; x <= Mathf.Ceil(b.x); x++) {
-				if(x >= 0 && x <= renderResolution && y >=0 && y <=renderResolution) {
+				if(x >= 0 && x <= renderResolution && y >= 0 && y <= renderResolution) {
 					points.Add(new Pair<int, int>(x, y));
 				}
 			}

@@ -5,10 +5,10 @@ using UnityEngine;
 public class SceneOptimizer {
 	public static string currentStatus;
 
-	static Camera cam;
-	static MeshFilter visiblityTesterMesh;
-	static RenderTexture renderTexture;
-	static Texture2D renderTexture2D;
+	private static Camera cam;
+	private static MeshFilter visiblityTesterMesh;
+	private static RenderTexture renderTexture;
+	private static Texture2D renderTexture2D;
 
 	static void Initialize(AnalyzerMeshData[] analyzerMeshData, Vector3 cameraPosition) {
 		if(cam == null) {
@@ -28,6 +28,14 @@ public class SceneOptimizer {
 		}
 	}
 
+	public static void Reset(AnalyzerMeshData[] analyzerMeshData) {
+		for(int i = 0; i < analyzerMeshData.Length; i++) {
+			analyzerMeshData[i].ResetMaterial();
+		}
+		if(cam != null) GameObject.DestroyImmediate(cam.gameObject);
+		if(visiblityTesterMesh != null) GameObject.DestroyImmediate(visiblityTesterMesh.gameObject);
+	}
+
 	static void UpdateRenderTextureSize(int sampleResolution) {
 		if(renderTexture == null || renderTexture.width != sampleResolution) {
 			renderTexture = new RenderTexture(sampleResolution, sampleResolution, 24, RenderTextureFormat.ARGB32);
@@ -37,7 +45,7 @@ public class SceneOptimizer {
 		}
 	}
 
-	public static IEnumerator AnalyzeMeshes(AnalyzerMeshData[] analyzerMeshData, Vector3 cameraPosition) {
+	public static IEnumerator AnalyzeMeshes(Vector3 cameraPosition, AnalyzerMeshData[] analyzerMeshData, List<int> dataToAnalyze = null) {
 		Initialize(analyzerMeshData, cameraPosition);
 		GameObject visiblityTester = new GameObject();
 		visiblityTester.name = "VisiblityTester";
@@ -48,48 +56,49 @@ public class SceneOptimizer {
 		visiblityTester.AddComponent<MeshRenderer>().material = Utilities.GetUnlitMaterial(Color.white);
 
 		float startTime = Time.time;
-		for(int i = 0; i<analyzerMeshData.Length; i++) {
-			IEnumerator inum = AnalyzeMesh(analyzerMeshData[i], "Processing mesh: " + (i + 1) + "/" + analyzerMeshData.Length + "  ");
-			while(inum.MoveNext()) {
-				yield return null;
+		if(dataToAnalyze == null) {
+			for(int i = 0; i<analyzerMeshData.Length; i++) {
+				if(analyzerMeshData[i].OptimizedMesh != null) continue;
+				IEnumerator inum = AnalyzeMesh(analyzerMeshData[i], "Processing mesh: " + (i + 1) + "/" + analyzerMeshData.Length + "  ");
+				while(inum.MoveNext()) {
+					yield return null;
+				}
 			}
-			//ObjExporter.MeshToFile(meshes[i], "Assets/Test/SceneOptimizerTest/Objs/" + i + ".obj");
+		} else {
+			for(int i = 0; i<dataToAnalyze.Count; i++) {
+				if(analyzerMeshData[dataToAnalyze[i]].OptimizedMesh != null) continue;
+				IEnumerator inum = AnalyzeMesh(analyzerMeshData[dataToAnalyze[i]],  "Processing mesh: " + (i + 1) + "/" + dataToAnalyze.Count + "  ");
+				while(inum.MoveNext()) {
+					yield return null;
+				}
+			}
 		}
-		StopAnalyzing(analyzerMeshData);
+		SceneOptimizerEditor.GetInstance().StopAnalyzing();
 		Debug.Log("Total Time: " + (Time.time - startTime) / 60 + " minutes");
 	}
 
-	public static void StopAnalyzing(AnalyzerMeshData[] analyzerMeshData) {
-		for(int i = 0; i < analyzerMeshData.Length; i++) {
-			analyzerMeshData[i].ResetMaterial();
-		}
-		if(cam != null) GameObject.DestroyImmediate(cam.gameObject);
-		if(visiblityTesterMesh != null) GameObject.DestroyImmediate(visiblityTesterMesh.gameObject);
-	}
-
 	static IEnumerator AnalyzeMesh(AnalyzerMeshData analyzerMeshData, string logPrefix = null) {
-		UpdateRenderTextureSize(analyzerMeshData.SampleResolution());
-		Mesh optimizedMesh =  Mesh.Instantiate(analyzerMeshData.GetMesh());
-		optimizedMesh.name = "Optimized" + analyzerMeshData.GetMesh().name;
-		List<int> triangles = new List<int>(analyzerMeshData.GetMesh().triangles);
+		UpdateRenderTextureSize(analyzerMeshData.sampleResolution);
+		Mesh optimizedMesh =  Mesh.Instantiate(analyzerMeshData.mesh);
+		optimizedMesh.name = "Optimized" + analyzerMeshData.mesh.name;
+		List<int> triangles = new List<int>(analyzerMeshData.mesh.triangles);
 
 		for(int i = 0; i < triangles.Count;) {
 			currentStatus = logPrefix + "Triangle: " + (i / 3 + 1) + "/" + triangles.Count / 3f;
 			Triangle visiblityTriangle = new Triangle(
-				analyzerMeshData.GetTransform().gameObject.transform.TransformPoint(analyzerMeshData.GetMesh().vertices[triangles[i]]),
-				analyzerMeshData.GetTransform().gameObject.transform.TransformPoint(analyzerMeshData.GetMesh().vertices[triangles[i + 1]]),
-				analyzerMeshData.GetTransform().gameObject.transform.TransformPoint(analyzerMeshData.GetMesh().vertices[triangles[i + 2]])
+				analyzerMeshData.transform.TransformPoint(analyzerMeshData.mesh.vertices[triangles[i]]),
+				analyzerMeshData.transform.TransformPoint(analyzerMeshData.mesh.vertices[triangles[i + 1]]),
+				analyzerMeshData.transform.TransformPoint(analyzerMeshData.mesh.vertices[triangles[i + 2]])
 			);
-			visiblityTriangle.InflateTriangle(0.001f);
+			visiblityTriangle.InflateTriangle(0.01f);
 			visiblityTesterMesh.transform.position = visiblityTriangle.Center();
 			visiblityTriangle.InverseTransformPoint(visiblityTesterMesh.transform);
 			visiblityTesterMesh.sharedMesh.vertices = visiblityTriangle.GetLocalVertices();
 
 			cam.transform.LookAt(visiblityTesterMesh.transform.position);
-
+			AdjustCameraFOV(visiblityTesterMesh);
 			yield return null;
-
-			if(!WhiteVisibleOnScreen(visiblityTriangle, analyzerMeshData.SampleResolution())) {
+			if(!WhiteVisibleOnScreen(visiblityTriangle, analyzerMeshData.sampleResolution)) {
 				triangles.RemoveAt(i + 2);
 				triangles.RemoveAt(i + 1);
 				triangles.RemoveAt(i);
@@ -100,11 +109,30 @@ public class SceneOptimizer {
 
 		optimizedMesh.triangles = triangles.ToArray();
 		RemoveLoneVertices(optimizedMesh);
-		while(OptimizeMeshTriangles(optimizedMesh, analyzerMeshData.ThresholdAngle())) {
+		while(OptimizeMeshTriangles(optimizedMesh, analyzerMeshData.thresholdAngle)) {
 			yield return null;
 		}
 		RemoveLoneVertices(optimizedMesh);
-		analyzerMeshData.SetOptimizedMesh(optimizedMesh);
+		analyzerMeshData.OptimizedMesh = optimizedMesh;
+	}
+
+	static void AdjustCameraFOV(MeshFilter meshFilter) {
+		while (cam.fieldOfView > 1 && IsInsideCamera(meshFilter)) {
+			cam.fieldOfView -= 1;
+		}
+		while (cam.fieldOfView < 100 && !IsInsideCamera(meshFilter)) {
+			cam.fieldOfView += 1;
+		}
+	}
+
+	static bool IsInsideCamera(MeshFilter meshFilter) {
+		foreach(Vector3 point in meshFilter.sharedMesh.vertices) {
+			Vector2 screenPoint = cam.WorldToViewportPoint(meshFilter.transform.TransformPoint(point));
+			if(screenPoint.x < 0 || screenPoint.x > 1 || screenPoint.y < 0 || screenPoint.y > 1) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	static bool WhiteVisibleOnScreen(Triangle triangle, int sampleResolution) {

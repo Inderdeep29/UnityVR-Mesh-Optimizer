@@ -3,10 +3,14 @@ using System.Collections.Generic;
 using UnityEngine;
 
 public class Utilities {
-	public enum SampleSize {_128, _256, _512, _1024, _2048};
+	public enum SampleSize {_32, _64, _128, _256, _512, _1024, _2048};
 
 	public static int GetSampleResolution(SampleSize size) {
 		switch(size) {
+			case SampleSize._32:
+				return 32;
+			case SampleSize._64:
+				return 64;
 			case SampleSize._128:
 				return 128;
 			case SampleSize._256:

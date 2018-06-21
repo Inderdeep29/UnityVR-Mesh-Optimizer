@@ -3,52 +3,65 @@ using System.Collections.Generic;
 using UnityEngine;
 
 public class AnalyzerMeshData {
-	MeshFilter sourceMeshFilter;
-	Mesh optimizedMesh;
-	Material originalMaterial;
-	int sampleResolution;
-	float threshold;
+	private MeshFilter sourceMeshFilter;
+	private Material originalMaterial;
+	private Utilities.SampleSize sampleSize;
+	private float threshold;
+	private Mesh optimizedMesh;
 
-	public AnalyzerMeshData(MeshFilter sourceMeshFilter, int sampleResolution, float threshold) {
+	public Transform transform {
+		get { return sourceMeshFilter.transform; }
+	}
+
+	public GameObject gameObject {
+		get { return sourceMeshFilter.gameObject; }
+	}
+
+	public MeshFilter meshFilter {
+		get { return sourceMeshFilter; }
+	}
+
+	public Mesh mesh {
+		get { return sourceMeshFilter.sharedMesh; }
+	}
+
+	public Utilities.SampleSize sampleRenderSize {
+		get { return sampleSize; }
+		set { sampleSize = value; }
+	}
+
+	public int sampleResolution {
+		get { return Utilities.GetSampleResolution(sampleSize); }
+	}
+
+	public float thresholdAngle {
+		get { return threshold; }
+		set { threshold = value; }
+	}
+
+	public Mesh OptimizedMesh {
+		get { return optimizedMesh; }
+		set { optimizedMesh = value; }
+	}
+
+	public AnalyzerMeshData(MeshFilter sourceMeshFilter, Utilities.SampleSize sampleSize, float threshold) {
 		this.sourceMeshFilter = sourceMeshFilter;
-		this.originalMaterial = sourceMeshFilter.gameObject.GetComponent<MeshRenderer>().sharedMaterial;
-		this.sampleResolution = sampleResolution;
+		if(sourceMeshFilter.gameObject.GetComponent<MeshRenderer>() != null) {
+			this.originalMaterial = sourceMeshFilter.gameObject.GetComponent<MeshRenderer>().sharedMaterial;
+		}
+		this.sampleRenderSize = sampleSize;
 		this.threshold = threshold;
 	}
 
 	public void SetMaterial(Material material) {
-		sourceMeshFilter.gameObject.GetComponent<MeshRenderer>().material = material;
+		if(sourceMeshFilter.gameObject.GetComponent<MeshRenderer>() != null) {
+			sourceMeshFilter.gameObject.GetComponent<MeshRenderer>().material = material;
+		}
 	}
 
 	public void ResetMaterial() {
-		sourceMeshFilter.gameObject.GetComponent<MeshRenderer>().material = originalMaterial;
-	}
-
-	public float ThresholdAngle() {
-		return threshold;
-	}
-
-	public int SampleResolution() {
-		return sampleResolution;
-	}
-
-	public MeshFilter MeshFilter() {
-		return sourceMeshFilter;
-	}
-
-	public Mesh GetMesh() {
-		return sourceMeshFilter.sharedMesh;
-	}
-
-	public Transform GetTransform() {
-		return sourceMeshFilter.transform;
-	}
-
-	public void SetOptimizedMesh(Mesh optimizedMesh) {
-		this.optimizedMesh = optimizedMesh;
-	}
-
-	public Mesh GetOptimizedMesh() {
-		return optimizedMesh;
+		if(sourceMeshFilter.gameObject.GetComponent<MeshRenderer>() != null) {
+			sourceMeshFilter.gameObject.GetComponent<MeshRenderer>().material = originalMaterial;
+		}
 	}
 }
