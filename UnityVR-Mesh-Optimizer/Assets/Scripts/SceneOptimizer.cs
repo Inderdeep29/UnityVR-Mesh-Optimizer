@@ -45,7 +45,7 @@ public class SceneOptimizer {
 		}
 	}
 
-	public static IEnumerator AnalyzeMeshes(Vector3 cameraPosition, AnalyzerMeshData[] analyzerMeshData, List<int> dataToAnalyze = null) {
+	public static IEnumerator AnalyzeMeshes(Vector3 cameraPosition, AnalyzerMeshData[] analyzerMeshData, List<int> dataToAnalyze, bool updateMeshFilter) {
 		Initialize(analyzerMeshData, cameraPosition);
 		GameObject visiblityTester = new GameObject();
 		visiblityTester.name = "VisiblityTester";
@@ -56,39 +56,29 @@ public class SceneOptimizer {
 		visiblityTester.AddComponent<MeshRenderer>().material = Utilities.GetUnlitMaterial(Color.white);
 
 		float startTime = Time.time;
-		if(dataToAnalyze == null) {
-			for(int i = 0; i<analyzerMeshData.Length; i++) {
-				if(analyzerMeshData[i].OptimizedMesh != null) continue;
-				IEnumerator inum = AnalyzeMesh(analyzerMeshData[i], "Processing mesh: " + (i + 1) + "/" + analyzerMeshData.Length + "  ");
-				while(inum.MoveNext()) {
-					yield return null;
-				}
-			}
-		} else {
-			for(int i = 0; i<dataToAnalyze.Count; i++) {
-				if(analyzerMeshData[dataToAnalyze[i]].OptimizedMesh != null) continue;
-				IEnumerator inum = AnalyzeMesh(analyzerMeshData[dataToAnalyze[i]],  "Processing mesh: " + (i + 1) + "/" + dataToAnalyze.Count + "  ");
-				while(inum.MoveNext()) {
-					yield return null;
-				}
+		for(int i = 0; i<dataToAnalyze.Count; i++) {
+			if(analyzerMeshData[dataToAnalyze[i]].AnalyzedMesh != null) continue;
+			IEnumerator inum = AnalyzeMesh(analyzerMeshData[dataToAnalyze[i]], true,  "Processing mesh: " + (i + 1) + "/" + dataToAnalyze.Count + "  ");
+			while(inum.MoveNext()) {
+				yield return null;
 			}
 		}
 		SceneOptimizerEditor.GetInstance().StopAnalyzing();
 		Debug.Log("Total Time: " + (Time.time - startTime) / 60 + " minutes");
 	}
 
-	static IEnumerator AnalyzeMesh(AnalyzerMeshData analyzerMeshData, string logPrefix = null) {
+	static IEnumerator AnalyzeMesh(AnalyzerMeshData analyzerMeshData, bool updateMeshFilter, string logPrefix = null) {
 		UpdateRenderTextureSize(analyzerMeshData.sampleResolution);
-		Mesh optimizedMesh =  Mesh.Instantiate(analyzerMeshData.mesh);
-		optimizedMesh.name = "Optimized" + analyzerMeshData.mesh.name;
-		List<int> triangles = new List<int>(analyzerMeshData.mesh.triangles);
+		Mesh analyzedMesh =  Mesh.Instantiate(analyzerMeshData.OriginalMesh);
+		analyzedMesh.name = "IDS " + analyzedMesh.name;
+		List<int> triangles = new List<int>(analyzedMesh.triangles);
 
 		for(int i = 0; i < triangles.Count;) {
 			currentStatus = logPrefix + "Triangle: " + (i / 3 + 1) + "/" + triangles.Count / 3f;
 			Triangle visiblityTriangle = new Triangle(
-				analyzerMeshData.transform.TransformPoint(analyzerMeshData.mesh.vertices[triangles[i]]),
-				analyzerMeshData.transform.TransformPoint(analyzerMeshData.mesh.vertices[triangles[i + 1]]),
-				analyzerMeshData.transform.TransformPoint(analyzerMeshData.mesh.vertices[triangles[i + 2]])
+				analyzerMeshData.transform.TransformPoint(analyzedMesh.vertices[triangles[i]]),
+				analyzerMeshData.transform.TransformPoint(analyzedMesh.vertices[triangles[i + 1]]),
+				analyzerMeshData.transform.TransformPoint(analyzedMesh.vertices[triangles[i + 2]])
 			);
 			visiblityTriangle.InflateTriangle(0.01f);
 			visiblityTesterMesh.transform.position = visiblityTriangle.Center();
@@ -107,13 +97,29 @@ public class SceneOptimizer {
 			}
 		}
 
-		optimizedMesh.triangles = triangles.ToArray();
-		RemoveLoneVertices(optimizedMesh);
-		while(OptimizeMeshTriangles(optimizedMesh, analyzerMeshData.thresholdAngle)) {
+		analyzedMesh.triangles = triangles.ToArray();
+		RemoveLoneVertices(analyzedMesh);
+		analyzerMeshData.AnalyzedMesh = analyzedMesh;
+		if(updateMeshFilter) {
+			analyzerMeshData.meshFilter.mesh = analyzerMeshData.AnalyzedMesh;
+		}
+	}
+
+	public static IEnumerator OptimizeMeshes(AnalyzerMeshData[] analyzerMeshData, List<int> dataToAnalyze, bool updateMeshFilter) {
+		for(int i = 0; i<dataToAnalyze.Count; i++) {
+			if(analyzerMeshData[dataToAnalyze[i]].AnalyzedMesh == null) continue;
+			Mesh optimizedMesh = Mesh.Instantiate(analyzerMeshData[dataToAnalyze[i]].AnalyzedMesh);
+			while(OptimizeMeshTriangles(optimizedMesh, analyzerMeshData[dataToAnalyze[i]].thresholdAngle)) {
+				yield return null;
+			}
+			RemoveLoneVertices(optimizedMesh);
+			analyzerMeshData[dataToAnalyze[i]].OptimizedMesh = optimizedMesh;
+			if(updateMeshFilter) {
+				analyzerMeshData[dataToAnalyze[i]].meshFilter.mesh = 
+					analyzerMeshData[dataToAnalyze[i]].OptimizedMesh;
+			}
 			yield return null;
 		}
-		RemoveLoneVertices(optimizedMesh);
-		analyzerMeshData.OptimizedMesh = optimizedMesh;
 	}
 
 	static void AdjustCameraFOV(MeshFilter meshFilter) {
@@ -139,14 +145,7 @@ public class SceneOptimizer {
 		RenderTexture.active = renderTexture;
 		renderTexture2D.ReadPixels(new Rect(0, 0, renderTexture.width, renderTexture.height), 0, 0);
 		RenderTexture.active = null;
-		List<Pair<int, int>> screenPoints = triangle.GetScreenPoints(cam, sampleResolution);
-
-		for(int i = 0; i< screenPoints.Count; i++) {
-			if(renderTexture2D.GetPixel(screenPoints[i].first, screenPoints[i].second) == Color.white) {
-				return true;
-			}
-		}
-		return false;
+		return triangle.ContainsColor(cam, ref renderTexture2D, Color.white);
 	}
 
 	static void RemoveLoneVertices(Mesh m) {

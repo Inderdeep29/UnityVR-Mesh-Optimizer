@@ -50,18 +50,15 @@ class Triangle {
 		return localVertices.ToArray();
 	}
 
-	public List<Pair<int, int>> GetScreenPoints(Camera cam, float renderResolution) {
+	public bool ContainsColor(Camera cam, ref Texture2D tex, Color color) {
 		List<Vector2> screenVertices = new List<Vector2>();
 		for(int i = 0; i < worldVertices.Count; i++) {
 			screenVertices.Add(cam.WorldToScreenPoint(worldVertices[i]));
 		}
-		List<Pair<int, int>> points = new List<Pair<int, int>>();
-
 		screenVertices.Sort(delegate(Vector2 a, Vector2 b){
 			if(a.y < b.y) return -1;
 			return 1;
 		});
-
 		float totalHeight = screenVertices[2].y - screenVertices[0].y;
 		for(int y = (int)screenVertices[0].y; y <= Mathf.Ceil(screenVertices[2].y); y++) {
 			bool isSecondHalf = y >= screenVertices[1].y;
@@ -80,12 +77,16 @@ class Triangle {
 				b = a - b;
 				a = a - b;
 			}
-			for(int x = (int)a.x; x <= Mathf.Ceil(b.x); x++) {
-				if(x >= 0 && x <= renderResolution && y >= 0 && y <= renderResolution) {
-					points.Add(new Pair<int, int>(x, y));
+			int startX = (int)a.x;
+			int endX = (int)Mathf.Ceil(b.x);
+			for(int x = startX; x <= endX; x++) {
+				if(x >= 0 && x <= tex.width && y >= 0 && y <= tex.height) {
+					if(tex.GetPixel(x, y) == color) {
+						return true;
+					}
 				}
 			}
 		}
-		return points;
+		return false;
 	}
 }

@@ -7,6 +7,8 @@ public class AnalyzerMeshData {
 	private Material originalMaterial;
 	private Utilities.SampleSize sampleSize;
 	private float threshold;
+	private Mesh originalMesh;
+	private Mesh analyzedMesh;
 	private Mesh optimizedMesh;
 
 	public Transform transform {
@@ -39,6 +41,15 @@ public class AnalyzerMeshData {
 		set { threshold = value; }
 	}
 
+	public Mesh OriginalMesh {
+		get { return originalMesh; }
+	}
+
+	public Mesh AnalyzedMesh {
+		get { return analyzedMesh; }
+		set { analyzedMesh = value; }
+	}
+
 	public Mesh OptimizedMesh {
 		get { return optimizedMesh; }
 		set { optimizedMesh = value; }
@@ -46,6 +57,7 @@ public class AnalyzerMeshData {
 
 	public AnalyzerMeshData(MeshFilter sourceMeshFilter, Utilities.SampleSize sampleSize, float threshold) {
 		this.sourceMeshFilter = sourceMeshFilter;
+		this.originalMesh = Mesh.Instantiate(sourceMeshFilter.sharedMesh);
 		if(sourceMeshFilter.gameObject.GetComponent<MeshRenderer>() != null) {
 			this.originalMaterial = sourceMeshFilter.gameObject.GetComponent<MeshRenderer>().sharedMaterial;
 		}

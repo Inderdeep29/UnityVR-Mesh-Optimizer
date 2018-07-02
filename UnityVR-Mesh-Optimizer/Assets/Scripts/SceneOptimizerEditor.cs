@@ -14,6 +14,7 @@ public class SceneOptimizerEditor : EditorWindow {
 	private List<AnalyzerMeshData> meshData;
     private IEnumerator coroutineInProgress;
 	private bool isAnalyzed;
+	private bool isOptimized;
 	private bool isAnalyzing;
 
 	private Texture viewButtonImage;
@@ -53,16 +54,22 @@ public class SceneOptimizerEditor : EditorWindow {
 		if(coroutineInProgress == null) return;
         bool finish = !coroutineInProgress.MoveNext();
 		instance.Repaint();
-        if (finish)
-        {
+        if (finish) {
+			EditorApplication.update -= EditorUpdate;
 			coroutineInProgress = null;
         }
 	}
 
-	void StartAnalyzing(List<int> dataToAnalyze = null) {
+	void StartAnalyzing(MeshEditorData meshEditorData) {
+		List<int> children = new List<int>();
+		GetAllChildren(meshEditorData, ref children);
+		StartAnalyzing(children);
+	}
+
+	void StartAnalyzing(List<int> data) {
 		isAnalyzing = true;
 		EditorApplication.update += EditorUpdate;
-		coroutineInProgress = SceneOptimizer.AnalyzeMeshes(playerPosition, meshData.ToArray(), dataToAnalyze);
+		coroutineInProgress = SceneOptimizer.AnalyzeMeshes(playerPosition, meshData.ToArray(), data, true);
 	}
 
 	public void StopAnalyzing() {
@@ -72,10 +79,48 @@ public class SceneOptimizerEditor : EditorWindow {
 		SceneOptimizer.Reset(meshData.ToArray());
 	}
 
-	void GenerateOptimizedMesh() {
-		foreach(AnalyzerMeshData analyzerMeshData in meshData) {
-			analyzerMeshData.meshFilter.mesh = analyzerMeshData.OptimizedMesh;
+	void ResetAnalyzedData(MeshEditorData meshEditorData) {
+		List<int> children = new List<int>();
+		GetAllChildren(meshEditorData, ref children);
+		ResetAnalyzedData(children);
+	}
+
+	void ResetAnalyzedData(List<int> data) {
+		for(int i = 0; i<data.Count; i++) {
+			meshData[data[i]].meshFilter.mesh = meshData[data[i]].OriginalMesh;
+			Mesh.DestroyImmediate(meshData[data[i]].AnalyzedMesh);
+			meshData[data[i]].AnalyzedMesh = null;
 		}
+	}
+
+	void ResetOptimizedData(MeshEditorData meshEditorData) {
+		List<int> children = new List<int>();
+		GetAllChildren(meshEditorData, ref children);
+		ResetOptimizedData(children);
+	}
+
+	void ResetOptimizedData(List<int> data) {
+		for(int i = 0; i<data.Count; i++) {
+			meshData[data[i]].meshFilter.mesh = meshData[data[i]].AnalyzedMesh;
+			Mesh.DestroyImmediate(meshData[data[i]].OptimizedMesh);
+			meshData[data[i]].OptimizedMesh = null;
+		}
+	}
+	
+	void StartOptimizing(MeshEditorData meshEditorData) {
+		List<int> children = new List<int>();
+		GetAllChildren(meshEditorData, ref children);
+		StartOptimizing(children);
+	}
+
+	void StartOptimizing(List<int> data) {
+		EditorApplication.update += EditorUpdate;
+		coroutineInProgress = SceneOptimizer.OptimizeMeshes(meshData.ToArray(), data, true);
+	}
+
+	void StopOptimizing() {
+		EditorApplication.update -= EditorUpdate;
+		coroutineInProgress = null;
 	}
 
 	void OnDestroy() {
@@ -103,6 +148,20 @@ public class SceneOptimizerEditor : EditorWindow {
 			}
 		}
 		return curr;
+	}
+
+	bool IsChildrenAnalyzed(MeshEditorData meshEditorData) {
+		if(meshEditorData.analyzerMesh != -1) {
+			if(meshData[meshEditorData.analyzerMesh].AnalyzedMesh == null) {
+				return false;
+			}
+		}
+		for(int i = 0; i<meshEditorData.childrenData.Count; i++) {
+			if(!IsChildrenAnalyzed(meshEditorData.childrenData[i])) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	bool IsChildrenOptimized(MeshEditorData meshEditorData) {
@@ -148,8 +207,13 @@ public class SceneOptimizerEditor : EditorWindow {
 
 	void MeshDataGUI(MeshEditorData meshEditorData, bool foldout = true) {
 		if(meshEditorData.gameObject != null) {
-			if(meshEditorData.analyzerMesh != -1 && meshData[meshEditorData.analyzerMesh].OptimizedMesh == null) {
-				isAnalyzed = false;
+			if(meshEditorData.analyzerMesh != -1) {
+				if(meshData[meshEditorData.analyzerMesh].AnalyzedMesh == null) {
+					isAnalyzed = false;
+				}
+				if(meshData[meshEditorData.analyzerMesh].OptimizedMesh == null) {
+					isOptimized = false;
+				}
 			}
 			if(foldout) {
 				EditorGUILayout.BeginHorizontal();
@@ -172,59 +236,64 @@ public class SceneOptimizerEditor : EditorWindow {
 				//GUILayout.FlexibleSpace();
 				if(!isAnalyzing) {
 					if(!meshEditorData.foldout) {
-						Utilities.SampleSize sampleSizeStatus = 
-							(Utilities.SampleSize) EditorGUILayout.EnumPopup(meshEditorData.sampleRenderSize, GUILayout.Width(100));
-						float thresholdStatus = EditorGUILayout.FloatField(meshEditorData.thresholdAngle, GUILayout.Width(100));
-						if(sampleSizeStatus != meshEditorData.sampleRenderSize) {
-							meshEditorData.sampleRenderSize = sampleSizeStatus;
-							UpdateAllChildrenSampleSize(meshEditorData, sampleSizeStatus);
-						}
-						if(thresholdStatus != meshEditorData.thresholdAngle) {
-							meshEditorData.thresholdAngle = thresholdStatus;
-							UpdateAllChildrenThreshold(meshEditorData, thresholdStatus);
+						if(!IsChildrenAnalyzed(meshEditorData)) {
+							Utilities.SampleSize sampleSizeStatus = 
+								(Utilities.SampleSize) EditorGUILayout.EnumPopup(meshEditorData.sampleRenderSize, GUILayout.Width(100));
+							if(sampleSizeStatus != meshEditorData.sampleRenderSize) {
+								meshEditorData.sampleRenderSize = sampleSizeStatus;
+								UpdateAllChildrenSampleSize(meshEditorData, sampleSizeStatus);
+							}
+							if(GUILayout.Button("Analyze Children", GUILayout.Width(150))) {
+								StartAnalyzing(meshEditorData);
+							}
+						} else if(!IsChildrenOptimized(meshEditorData)) {
+							float thresholdStatus = EditorGUILayout.FloatField(meshEditorData.thresholdAngle, GUILayout.Width(100));
+							if(thresholdStatus != meshEditorData.thresholdAngle) {
+								meshEditorData.thresholdAngle = thresholdStatus;
+								UpdateAllChildrenThreshold(meshEditorData, thresholdStatus);
+							}
+							if(GUILayout.Button("Reanalyze Children", GUILayout.Width(150))) {
+								ResetAnalyzedData(meshEditorData);
+							}
+							if(GUILayout.Button("Optimize Children", GUILayout.Width(150))) {
+								StartOptimizing(meshEditorData);
+							}
+						} else {
+							if(GUILayout.Button("Revert Children", GUILayout.Width(150))) {
+								ResetOptimizedData(meshEditorData);
+							}
 						}
 					} else if(meshEditorData.analyzerMesh != -1) {
-						if(meshData[meshEditorData.analyzerMesh].OptimizedMesh == null) {
+						if(meshData[meshEditorData.analyzerMesh].AnalyzedMesh == null) {
 							Utilities.SampleSize sampleSizeStatus = 
 								(Utilities.SampleSize) EditorGUILayout.EnumPopup(meshData[meshEditorData.analyzerMesh].sampleRenderSize, GUILayout.Width(100));
-							float thresholdStatus = 
-								EditorGUILayout.FloatField(meshData[meshEditorData.analyzerMesh].thresholdAngle, GUILayout.Width(100));
 							if(!meshEditorData.foldout) {
 								if(sampleSizeStatus != meshData[meshEditorData.analyzerMesh].sampleRenderSize) {
 									UpdateAllChildrenSampleSize(meshEditorData, sampleSizeStatus);
 								}
+							}
+							meshData[meshEditorData.analyzerMesh].sampleRenderSize = sampleSizeStatus;
+							if(GUILayout.Button("Analyze", GUILayout.Width(150))) {
+								StartAnalyzing(new List<int>(){meshEditorData.analyzerMesh});
+							}
+						} else if(meshData[meshEditorData.analyzerMesh].OptimizedMesh == null) {
+							float thresholdStatus = 
+								EditorGUILayout.FloatField(meshData[meshEditorData.analyzerMesh].thresholdAngle, GUILayout.Width(100));
+							if(!meshEditorData.foldout) {
 								if(thresholdStatus != meshData[meshEditorData.analyzerMesh].thresholdAngle) {
 									UpdateAllChildrenThreshold(meshEditorData, thresholdStatus);
 								}
 							}
-							meshData[meshEditorData.analyzerMesh].sampleRenderSize = sampleSizeStatus;
 							meshData[meshEditorData.analyzerMesh].thresholdAngle = thresholdStatus;
-						}
-					}
-					if(!meshEditorData.foldout) {
-						if(!IsChildrenOptimized(meshEditorData)) {
-							if(GUILayout.Button("Analyze Children", GUILayout.Width(150))) {
-								List<int> children = new List<int>();
-								GetAllChildren(meshEditorData, ref children);
-								StartAnalyzing(children);
+							if(GUILayout.Button("Reanalyze", GUILayout.Width(150))) {
+								ResetAnalyzedData(new List<int>(){meshEditorData.analyzerMesh});
+							}
+							if(GUILayout.Button("Optimize", GUILayout.Width(150))) {
+								StartOptimizing(new List<int>(){meshEditorData.analyzerMesh});
 							}
 						} else {
-							if(GUILayout.Button("Reanalyze", GUILayout.Width(150))) {
-								List<int> children = new List<int>();
-								GetAllChildren(meshEditorData, ref children);
-								for(int i = 0; i < children.Count; i++) {
-									meshData[children[i]].OptimizedMesh = null;
-								}
-							}
-						}
-					} else if(meshEditorData.analyzerMesh != -1) {
-						if(meshData[meshEditorData.analyzerMesh].OptimizedMesh == null) {
-							if(GUILayout.Button("Analyze", GUILayout.Width(150))) {
-								StartAnalyzing(new List<int>(){meshEditorData.analyzerMesh});
-							}
-						} else {
-							if(GUILayout.Button("Reanalyze", GUILayout.Width(150))) {
-								meshData[meshEditorData.analyzerMesh].OptimizedMesh = null;
+							if(GUILayout.Button("Revert", GUILayout.Width(150))) {
+								ResetOptimizedData(new List<int>(){meshEditorData.analyzerMesh});
 							}
 						}
 					}
@@ -261,32 +330,43 @@ public class SceneOptimizerEditor : EditorWindow {
 		}
 		GUILayout.Label ("Active meshes in scene: ", EditorStyles.boldLabel);
 		isAnalyzed = true;
+		isOptimized = true;
 		MeshDataGUI(root);
 		EditorGUILayout.EndScrollView();
 		
 		if(!isAnalyzed && !isAnalyzing) {
 			if(GUILayout.Button("Analyze All")) {
-				StartAnalyzing();
+				StartAnalyzing(root);
 			}
 		} else if(isAnalyzing) {
 			EditorGUILayout.LabelField (SceneOptimizer.currentStatus);
 			if(GUILayout.Button("Stop")) {
 				StopAnalyzing();
 			}
+		} else if(!isOptimized) {
+			if(GUILayout.Button("Reanalyze All")) {
+				ResetAnalyzedData(root);
+			}
+			if(GUILayout.Button("Optimize All")) {
+				StartOptimizing(root);
+			}
 		} else {
+			if(GUILayout.Button("Revert All")) {
+				ResetOptimizedData(root);
+			}
 			if(GUILayout.Button("Save As Combined Obj")) {
 				Debug.LogError("To Be Implemented");
 			}
 			if(GUILayout.Button("Save As Separate Objs")) {
 				foreach(AnalyzerMeshData data in meshData) {
-					if(data.OptimizedMesh != null) {
-						ObjExporter.MeshToFile(data.OptimizedMesh, 
-							data.meshFilter.GetComponent<Renderer>().sharedMaterials, "Assets/IDS_SceneOptimizer/Objs/" + data.OptimizedMesh.name + ".obj");
+					if(data.AnalyzedMesh != null) {
+						ObjExporter.MeshToFile(data.AnalyzedMesh, 
+							data.meshFilter.GetComponent<Renderer>().sharedMaterials, "Assets/IDS_SceneOptimizer/Objs/" + data.AnalyzedMesh.name + ".obj");
 					}
 				}
 			}
 			if(GUILayout.Button("Generate")) {
-				GenerateOptimizedMesh();
+				//GenerateOptimizedMesh();
 			}
 		}
 	}
